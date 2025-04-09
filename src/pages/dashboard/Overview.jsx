@@ -36,6 +36,8 @@ function Overview() {
     const fetchDashboardData = async () => {
       try {
         const response = await api.get('/users/dashboard/stats');
+        // Log the raw stats received from the API
+        console.log('API Response Stats:', response.data.stats);
         setStats(prevStats => ({
           ...prevStats,
           ...response.data.stats
@@ -65,6 +67,8 @@ function Overview() {
   return (
     <>
       <h2 className="text-2xl font-bold mb-4">Dashboard Overview</h2>
+      {/* Log the stats state before rendering */}
+      {console.log('Rendering Stats:', stats)}
       
       {/* Stats */}
       <Row className="mb-4">
