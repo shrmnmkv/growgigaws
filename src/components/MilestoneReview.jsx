@@ -3,6 +3,19 @@ import { Card, Button, Form, Alert, Spinner } from 'react-bootstrap';
 import { CheckCircle, XCircle, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../utils/api';
+import { S3Client } from "@aws-sdk/client-s3";
+
+// Initialize S3 Client WITHOUT explicit credentials.
+// The SDK automatically searches for credentials in a specific order:
+// 1. Environment variables (AWS_ACCESS_KEY_ID, etc.) - Useful for local fallback/override
+// 2. Shared credential file (~/.aws/credentials)
+// 3. AWS config file (~/.aws/config)
+// 4. EC2 instance profile or ECS task role credentials (if running on AWS with role attached)
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION, // Still required
+});
+
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME; // Still required
 
 function MilestoneReview({ milestone, onReviewComplete }) {
   const [loading, setLoading] = useState(false);
