@@ -483,9 +483,6 @@ function FreelancerProfile() {
               >
                 Contact
               </Button>
-              <Button variant="outline-primary" size="lg" className="w-100">
-                Save Profile
-              </Button>
             </Card.Body>
           </Card>
         </Col>
