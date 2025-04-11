@@ -284,9 +284,16 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
 }, async (req, res) => {
     const { milestoneId } = req.params;
     const { description } = req.body;
-    const userId = req.user.userId; 
+    // Correctly access userId from req.user attached by auth middleware
+    const userId = req.user ? req.user._id : null; 
     const s3Client = req.s3Client; 
     const BUCKET_NAME = req.bucketName; 
+
+    // Check if userId was found (should be set by auth middleware)
+    if (!userId) {
+        console.error("User ID not found on request after auth middleware.");
+        return res.status(401).json({ message: 'Authentication error: User not identified.'});
+    }
 
     // Basic validation
     if (!description || !description.trim()) {
