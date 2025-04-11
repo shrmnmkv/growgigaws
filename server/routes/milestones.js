@@ -373,7 +373,9 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
 
         // Assign the submission data to the milestone
         milestone.submission = submissionData;
-        milestone.status = 'submitted'; // Update overall milestone status (enum checked in schema)
+        // Keep the overall milestone status as 'in-progress' to allow employer review
+        // The submission itself has status/timestamp indicating work was submitted.
+        milestone.status = 'in-progress'; 
 
         // --- DEBUG LOGGING --- 
         console.log("--- Object BEFORE save ---");
