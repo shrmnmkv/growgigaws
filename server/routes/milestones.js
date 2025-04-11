@@ -342,8 +342,7 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
                     Bucket: BUCKET_NAME,
                     Key: fileKey,
                     Body: file.buffer,
-                    ContentType: file.mimetype,
-                    ACL: 'public-read'
+                    ContentType: file.mimetype
                 };
 
                 const command = new PutObjectCommand(putObjectParams);
