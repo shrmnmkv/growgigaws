@@ -8,6 +8,8 @@ import Application from '../models/Application.js';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import Payment from '../models/Payment.js';
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { v4 as uuidv4 } from 'uuid';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -608,6 +610,105 @@ router.post('/:id/review', auth, async (req, res) => {
     console.error('Error reviewing milestone:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
+});
+
+// POST route for submitting milestone work
+// Uses upload middleware from index.js (passed via req.upload)
+// Uses s3Client and bucketName from index.js (passed via req.s3Client, req.bucketName)
+router.post('/:milestoneId/submit', auth, (req, res, next) => {
+    // Use the multer instance attached to the request
+    req.upload.array('files', 5)(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            // A Multer error occurred when uploading.
+            console.error("Multer error:", err);
+            return res.status(400).json({ message: `File upload error: ${err.message}` });
+        } else if (err) {
+            // An unknown error occurred when uploading.
+            console.error("Unknown file upload error:", err);
+            return res.status(500).json({ message: "Unknown error during file processing." });
+        }
+        // Everything went fine with multer, proceed to route handler logic
+        next();
+    });
+}, async (req, res) => {
+    const { milestoneId } = req.params;
+    const { description } = req.body;
+    const userId = req.user.userId; // Assuming auth middleware adds userId
+    const s3Client = req.s3Client; // Get S3 client from request
+    const BUCKET_NAME = req.bucketName; // Get Bucket name from request
+
+    // Basic validation
+    if (!description || !description.trim()) {
+        return res.status(400).json({ message: 'Description is required.' });
+    }
+    if (!s3Client || !BUCKET_NAME) {
+        return res.status(500).json({ message: 'S3 configuration is missing on the server.' });
+    }
+
+    try {
+        const milestone = await Milestone.findById(milestoneId);
+        if (!milestone) {
+            return res.status(404).json({ message: 'Milestone not found' });
+        }
+        // Add any necessary authorization checks here
+
+        const uploadedFilesInfo = []; // Array to store S3 file details
+
+        if (req.files && req.files.length > 0) {
+            console.log(`Processing ${req.files.length} files for S3 upload...`);
+            for (const file of req.files) {
+                const fileKey = `milestones/${milestoneId}/${userId}/${uuidv4()}-${file.originalname}`;
+                console.log(`Uploading ${file.originalname} to S3 with key: ${fileKey}`);
+
+                const putObjectParams = {
+                    Bucket: BUCKET_NAME,
+                    Key: fileKey,
+                    Body: file.buffer,        // File content from memory storage
+                    ContentType: file.mimetype, // File type
+                    // ACL: 'public-read' // Optional: Uncomment if files should be public by default
+                };
+
+                const command = new PutObjectCommand(putObjectParams);
+                await s3Client.send(command); // Upload the file
+
+                const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${fileKey}`;
+                console.log(`Successfully uploaded ${file.originalname} to ${fileUrl}`);
+
+                uploadedFilesInfo.push({
+                    originalname: file.originalname,
+                    mimetype: file.mimetype,
+                    size: file.size,
+                    path: fileUrl, // Store the full S3 URL
+                    key: fileKey   // Store the S3 key
+                });
+            }
+        }
+
+        // Update the milestone submission in the database
+        milestone.submission = {
+            description: description.trim(),
+            files: uploadedFilesInfo, // Save the array with S3 URLs
+            submittedAt: new Date(),
+            status: 'submitted'
+        };
+        milestone.status = 'submitted'; // Update overall milestone status
+
+        const updatedMilestone = await milestone.save();
+
+        console.log('Milestone submission updated successfully in DB with S3 file info.');
+        res.status(200).json(updatedMilestone);
+
+    } catch (error) {
+        console.error("Error submitting milestone work / uploading to S3:", error);
+        // Provide more context in error response if possible
+        let errorMessage = "Server error during milestone submission.";
+        if (error.name === 'MongoServerError') {
+            errorMessage = "Database error during milestone submission.";
+        } else if (error.message.includes('S3')) { // Basic check for S3 errors
+             errorMessage = "S3 upload error during milestone submission.";
+        }
+        res.status(500).json({ message: errorMessage, error: error.message });
+    }
 });
 
 export default router;

@@ -16,8 +16,10 @@ import userRoutes from './routes/users.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { S3Client } from "@aws-sdk/client-s3";
+import multer from 'multer';
 
-dotenv.config();
+dotenv.config({ path: './server/.env' });
 
 const app = express();
 
@@ -117,6 +119,33 @@ mongoose.connection.on('disconnected', () => {
 
 mongoose.connection.on('reconnected', () => {
   console.log('MongoDB reconnected');
+});
+
+// --- AWS S3 Client Initialization ---
+// Initialize S3 Client WITHOUT explicit credentials (uses IAM Role from EC2)
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION, // Required: Get region from .env
+});
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME; // Required: Get bucket name from .env
+// --- End S3 Initialization ---
+
+// --- Multer Configuration for S3 ---
+// Configure Multer for memory storage to get file buffer for S3
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit (match frontend)
+  // Optional: Add server-side file filtering logic here if needed
+});
+// --- End Multer Configuration ---
+
+// Pass s3Client, BUCKET_NAME, and upload instance to routes that need them
+// Option 1: Middleware (if routes need consistent access)
+app.use((req, res, next) => {
+  req.s3Client = s3Client;
+  req.bucketName = BUCKET_NAME;
+  req.upload = upload; // Make multer instance available
+  next();
 });
 
 // Public routes
