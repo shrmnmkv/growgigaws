@@ -6,10 +6,10 @@ const getToken = () => localStorage.getItem('token');
 
 // Create an Axios instance
 const api = axios.create({
-  // Use a relative path for baseURL. Requests will go to the same origin
-  // as the frontend (e.g., http://your-ec2-ip/api/...)
-  // Nginx will then proxy requests starting with /api to the backend.
-  baseURL: '/', 
+  // Set baseURL to /api/ so all requests are prefixed correctly
+  // Example: api.post('/auth/login') will send a request to /api/auth/login
+  // Nginx will then correctly proxy this to the backend.
+  baseURL: '/api',
 });
 
 // Enable debug mode to see detailed logs
