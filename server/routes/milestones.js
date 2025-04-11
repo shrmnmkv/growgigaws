@@ -261,9 +261,7 @@ router.post('/:id/review', auth, async (req, res) => {
   }
 });
 
-// POST route for submitting milestone work (S3 VERSION - KEEP THIS ONE)
-// Uses upload middleware from index.js (passed via req.upload)
-// Uses s3Client and bucketName from index.js (passed via req.s3Client, req.bucketName)
+// POST route for submitting milestone work (S3 VERSION)
 router.post('/:milestoneId/submit', auth, (req, res, next) => {
     // Use the multer instance attached to the request (from server/index.js)
     if (!req.upload) {
@@ -299,14 +297,34 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
     }
 
     try {
-        const milestone = await Milestone.findById(milestoneId);
+        // Find the milestone and populate the associated job
+        const milestone = await Milestone.findById(milestoneId).populate('job');
         if (!milestone) {
             return res.status(404).json({ message: 'Milestone not found' });
         }
-        // Add any necessary authorization checks here
+        if (!milestone.job) {
+            return res.status(500).json({ message: 'Milestone is not associated with a valid job.' });
+        }
 
+        // Find the accepted application for the job to get the freelancer ID
+        const acceptedApplication = await Application.findOne({
+            job: milestone.job._id,
+            status: 'accepted'
+        }).populate('freelancer', 'firstName lastName');
+
+        if (!acceptedApplication || !acceptedApplication.freelancer) {
+            console.error(`No accepted application or valid freelancer found for job ${milestone.job._id}`);
+            return res.status(404).json({ message: 'Cannot submit: No accepted freelancer found for this job.' });
+        }
+
+        // Authorization: Ensure the submitter is the accepted freelancer
+        if (!acceptedApplication.freelancer._id.equals(userId)) {
+            console.log(`Unauthorized submission attempt: User ${userId} vs Freelancer ${acceptedApplication.freelancer._id}`);
+            return res.status(403).json({ message: 'You are not authorized to submit work for this milestone.' });
+        }
+
+        // --- S3 Upload Logic --- 
         const uploadedFilesInfo = []; 
-
         if (req.files && req.files.length > 0) {
             console.log(`Processing ${req.files.length} files for S3 upload...`);
             for (const file of req.files) {
@@ -318,7 +336,6 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
                     Key: fileKey,
                     Body: file.buffer,        
                     ContentType: file.mimetype, 
-                    // ACL: 'public-read' 
                 };
 
                 const command = new PutObjectCommand(putObjectParams);
@@ -336,26 +353,35 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
                 });
             }
         }
+        // --- End S3 Upload Logic --- 
 
-        milestone.submission = {
+        // Construct the submission object (ensuring no freelancer field)
+        const submissionData = {
             description: description.trim(),
-            files: uploadedFilesInfo, 
+            files: uploadedFilesInfo,
             submittedAt: new Date(),
-            status: 'submitted'
+            status: 'submitted' // status within submission sub-doc, might not be needed if reviewStatus covers it
+            // Explicitly NO freelancer field here
         };
-        milestone.status = 'submitted'; 
 
-        const updatedMilestone = await milestone.save();
+        // Assign the submission data to the milestone
+        milestone.submission = submissionData;
+        milestone.status = 'submitted'; // Update overall milestone status (enum checked in schema)
 
-        console.log('Milestone submission updated successfully in DB with S3 file info.');
+        const updatedMilestone = await milestone.save(); // Save the changes
+
+        console.log('Milestone submission updated successfully in DB.');
         res.status(200).json(updatedMilestone);
 
     } catch (error) {
-        console.error("Error submitting milestone work / uploading to S3:", error);
+        console.error("Error submitting milestone work:", error);
         let errorMessage = "Server error during milestone submission.";
-        if (error.name === 'MongoServerError') {
-            errorMessage = "Database error during milestone submission.";
-        } else if (error.message.includes('S3')) { 
+        if (error.name === 'ValidationError') { 
+            errorMessage = "Validation failed. Please check your input.";
+            console.error("Validation Errors:", error.errors);
+            return res.status(400).json({ message: errorMessage, errors: error.errors }); 
+        }
+        if (error.message.includes('S3')) { 
              errorMessage = "S3 upload error during milestone submission.";
         }
         res.status(500).json({ message: errorMessage, error: error.message });

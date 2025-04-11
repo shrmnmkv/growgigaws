@@ -6,26 +6,17 @@ const submissionSchema = new mongoose.Schema({
     required: true
   },
   files: [{
-    filename: String,
     originalname: String,
-    path: String,
+    mimetype: String,
     size: Number,
-    mimetype: String
+    path: String,
+    key: String
   }],
   submittedAt: {
     type: Date,
     default: Date.now
   },
   updatedAt: Date,
-  freelancer: {
-    _id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    },
-    firstName: String,
-    lastName: String
-  },
   reviewStatus: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],
@@ -69,12 +60,13 @@ const milestoneSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'in-progress', 'completed', 'overdue'],
+    required: true,
+    enum: ['pending', 'in-progress', 'submitted', 'completed', 'overdue'],
     default: 'pending'
   },
   escrowStatus: {
     type: String,
-    enum: ['unfunded', 'funded', 'released'],
+    enum: ['unfunded', 'funded', 'released', 'refunded'],
     default: 'unfunded'
   },
   payment: {
@@ -87,7 +79,7 @@ const milestoneSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
-});
+}, { timestamps: true });
 
 // Add index for job field for faster queries
 milestoneSchema.index({ job: 1 });
