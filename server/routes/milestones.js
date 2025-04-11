@@ -368,6 +368,13 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
         milestone.submission = submissionData;
         milestone.status = 'submitted'; // Update overall milestone status (enum checked in schema)
 
+        // --- DEBUG LOGGING --- 
+        console.log("--- Object BEFORE save ---");
+        console.log("Milestone Status:", milestone.status);
+        console.log("Milestone Submission Object:", JSON.stringify(milestone.submission, null, 2));
+        console.log("-------------------------");
+        // --- END DEBUG LOGGING ---
+
         const updatedMilestone = await milestone.save(); // Save the changes
 
         console.log('Milestone submission updated successfully in DB.');
