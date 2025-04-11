@@ -1,26 +1,27 @@
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-// Create an API instance with base URL
+// Function to get the token from localStorage
+const getToken = () => localStorage.getItem('token');
+
+// Create an Axios instance
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  // Use a relative path for baseURL. Requests will go to the same origin
+  // as the frontend (e.g., http://your-ec2-ip/api/...)
+  // Nginx will then proxy requests starting with /api to the backend.
+  baseURL: '/', 
 });
 
 // Enable debug mode to see detailed logs
 const DEBUG_API = true;
 
-// Add a request interceptor to add the auth token to all requests
+// Add a request interceptor to include the token in headers
 api.interceptors.request.use(
   (config) => {
-    // Add token to headers if it exists
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
-
     // Enable credentials and CORS
     config.withCredentials = true;
     
@@ -40,7 +41,7 @@ api.interceptors.request.use(
   }
 );
 
-// Add a response interceptor to handle errors
+// Add a response interceptor for handling errors (optional)
 api.interceptors.response.use(
   (response) => {
     // Log successful responses if debugging is enabled
@@ -79,8 +80,13 @@ api.interceptors.response.use(
       
       if (error.response.status === 401) {
         // Token expired or invalid
+        console.log("Unauthorized access - redirecting to login");
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        // Redirect to login, preserving the intended destination
+        // Check if we are already on the login page to avoid loops
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+        }
       } else if (error.response.status === 404) {
         // Detailed 404 error
         console.error(`API endpoint not found: ${error.config.method.toUpperCase()} ${error.config.url}`);
