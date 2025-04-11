@@ -2,7 +2,6 @@ import express from 'express';
 import Milestone from '../models/Milestone.js';
 import Job from '../models/Job.js';
 import { auth, checkRole } from '../middleware/auth.js';
-import multer from 'multer';
 import path from 'path';
 import Application from '../models/Application.js';
 import fs from 'fs';
@@ -11,129 +10,7 @@ import Payment from '../models/Payment.js';
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { v4 as uuidv4 } from 'uuid';
 
-// Get directory name in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Define upload directory path - make sure it exactly matches the structure in index.js
-const uploadDir = path.join(__dirname, '..', 'uploads', 'milestone-submissions');
-
-// Log the directory path to help with debugging
-console.log('Milestone submissions upload directory:', uploadDir);
-
-// Ensure upload directory exists
-try {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('Milestone submissions directory created/verified successfully');
-} catch (error) {
-  console.error('Error creating milestone submissions directory:', {
-    error: error.message,
-    code: error.code,
-    path: uploadDir
-  });
-}
-
 const router = express.Router();
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
-  }
-});
-
-// Custom error handler for multer
-const uploadErrorHandler = (err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    // A Multer error occurred when uploading
-    console.error('Multer error:', err);
-    
-    let errorMessage = 'File upload error';
-    // Specific error messages based on multer error code
-    switch(err.code) {
-      case 'LIMIT_FILE_SIZE':
-        errorMessage = 'File is too large. Maximum size is 10MB';
-        break;
-      case 'LIMIT_FILE_COUNT':
-        errorMessage = 'Too many files. Maximum is 5 files';
-        break;
-      case 'LIMIT_UNEXPECTED_FILE':
-        errorMessage = 'Unexpected field name in upload';
-        break;
-      default:
-        errorMessage = `File upload error: ${err.message}`;
-    }
-    
-    return res.status(400).json({ 
-      message: errorMessage,
-      code: err.code
-    });
-  } else if (err) {
-    // An unknown error occurred - log detailed information
-    console.error('Unknown upload error:', err);
-    console.error('Error details:', {
-      message: err.message,
-      code: err.code,
-      syscall: err.syscall,
-      path: err.path,
-      stack: err.stack
-    });
-    
-    // Check if it's a file system error
-    if (err.code === 'ENOENT') {
-      return res.status(500).json({ 
-        message: 'Server storage error: Directory not found. Please contact support.'
-      });
-    } else if (err.code === 'EACCES') {
-      return res.status(500).json({ 
-        message: 'Server storage error: Permission denied. Please contact support.'
-      });
-    }
-    
-    return res.status(500).json({ 
-      message: `File upload error: ${err.message}`
-    });
-  }
-  next();
-};
-
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-    files: 5 // Max 5 files
-  },
-  fileFilter: (req, file, cb) => {
-    // Allow common file types
-    const allowedMimes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
-      'application/zip',
-      'application/x-rar-compressed',
-      'application/vnd.rar',
-      'image/jpeg',
-      'image/png',
-      'image/jpg'
-    ];
-    
-    // Also check file extension as a fallback
-    const allowedExts = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar', '.jpg', '.jpeg', '.png'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    
-    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
-      console.log('File accepted:', { name: file.originalname, mimetype: file.mimetype, extension: ext });
-      cb(null, true);
-    } else {
-      console.log('File rejected:', { name: file.originalname, mimetype: file.mimetype, extension: ext });
-      cb(new Error(`Invalid file type. Allowed types: ${allowedExts.join(', ')}`));
-    }
-  }
-});
 
 // Get milestones for a job
 router.get('/job/:jobId', auth, async (req, res) => {
@@ -295,7 +172,7 @@ router.post('/:id/submit', auth, (req, res, next) => {
   
   // Wrap multer in a try-catch to handle any potential errors
   try {
-    upload.array('files')(req, res, (err) => {
+    req.upload.array('files')(req, res, (err) => {
       if (err) {
         // Handle multer errors
         console.error('Multer error occurred:', {
@@ -304,7 +181,10 @@ router.post('/:id/submit', auth, (req, res, next) => {
           field: err.field,
           stack: err.stack
         });
-        return uploadErrorHandler(err, req, res, next);
+        return res.status(400).json({ 
+          message: 'File upload error',
+          code: err.code
+        });
       }
       // Continue with normal request handling
       next();
@@ -616,15 +496,20 @@ router.post('/:id/review', auth, async (req, res) => {
 // Uses upload middleware from index.js (passed via req.upload)
 // Uses s3Client and bucketName from index.js (passed via req.s3Client, req.bucketName)
 router.post('/:milestoneId/submit', auth, (req, res, next) => {
-    // Use the multer instance attached to the request
+    // Use the multer instance attached to the request (from server/index.js)
+    // Ensure req.upload is available from the middleware in index.js
+    if (!req.upload) {
+        console.error("Multer instance not found on request object in milestone submit route.");
+        return res.status(500).json({ message: "Server configuration error: Uploader not initialized." });
+    }
     req.upload.array('files', 5)(req, res, (err) => {
-        if (err instanceof multer.MulterError) {
-            // A Multer error occurred when uploading.
-            console.error("Multer error:", err);
-            return res.status(400).json({ message: `File upload error: ${err.message}` });
+        // Handle Multer errors specifically from the memory storage instance
+        if (err instanceof multer.MulterError) { 
+            console.error("Multer memory storage error:", err);
+            return res.status(400).json({ message: `File upload error: ${err.message}`, code: err.code });
         } else if (err) {
-            // An unknown error occurred when uploading.
-            console.error("Unknown file upload error:", err);
+            // An unknown error occurred during memory storage processing.
+            console.error("Unknown file memory processing error:", err);
             return res.status(500).json({ message: "Unknown error during file processing." });
         }
         // Everything went fine with multer, proceed to route handler logic
@@ -633,9 +518,9 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
 }, async (req, res) => {
     const { milestoneId } = req.params;
     const { description } = req.body;
-    const userId = req.user.userId; // Assuming auth middleware adds userId
-    const s3Client = req.s3Client; // Get S3 client from request
-    const BUCKET_NAME = req.bucketName; // Get Bucket name from request
+    const userId = req.user.userId; 
+    const s3Client = req.s3Client; 
+    const BUCKET_NAME = req.bucketName; 
 
     // Basic validation
     if (!description || !description.trim()) {
@@ -652,7 +537,7 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
         }
         // Add any necessary authorization checks here
 
-        const uploadedFilesInfo = []; // Array to store S3 file details
+        const uploadedFilesInfo = []; 
 
         if (req.files && req.files.length > 0) {
             console.log(`Processing ${req.files.length} files for S3 upload...`);
@@ -663,13 +548,13 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
                 const putObjectParams = {
                     Bucket: BUCKET_NAME,
                     Key: fileKey,
-                    Body: file.buffer,        // File content from memory storage
-                    ContentType: file.mimetype, // File type
-                    // ACL: 'public-read' // Optional: Uncomment if files should be public by default
+                    Body: file.buffer,        
+                    ContentType: file.mimetype, 
+                    // ACL: 'public-read' 
                 };
 
                 const command = new PutObjectCommand(putObjectParams);
-                await s3Client.send(command); // Upload the file
+                await s3Client.send(command); 
 
                 const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${fileKey}`;
                 console.log(`Successfully uploaded ${file.originalname} to ${fileUrl}`);
@@ -678,20 +563,19 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
                     originalname: file.originalname,
                     mimetype: file.mimetype,
                     size: file.size,
-                    path: fileUrl, // Store the full S3 URL
-                    key: fileKey   // Store the S3 key
+                    path: fileUrl, 
+                    key: fileKey   
                 });
             }
         }
 
-        // Update the milestone submission in the database
         milestone.submission = {
             description: description.trim(),
-            files: uploadedFilesInfo, // Save the array with S3 URLs
+            files: uploadedFilesInfo, 
             submittedAt: new Date(),
             status: 'submitted'
         };
-        milestone.status = 'submitted'; // Update overall milestone status
+        milestone.status = 'submitted'; 
 
         const updatedMilestone = await milestone.save();
 
@@ -700,11 +584,10 @@ router.post('/:milestoneId/submit', auth, (req, res, next) => {
 
     } catch (error) {
         console.error("Error submitting milestone work / uploading to S3:", error);
-        // Provide more context in error response if possible
         let errorMessage = "Server error during milestone submission.";
         if (error.name === 'MongoServerError') {
             errorMessage = "Database error during milestone submission.";
-        } else if (error.message.includes('S3')) { // Basic check for S3 errors
+        } else if (error.message.includes('S3')) { 
              errorMessage = "S3 upload error during milestone submission.";
         }
         res.status(500).json({ message: errorMessage, error: error.message });
