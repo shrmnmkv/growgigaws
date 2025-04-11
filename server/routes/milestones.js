@@ -2,6 +2,7 @@ import express from 'express';
 import Milestone from '../models/Milestone.js';
 import Job from '../models/Job.js';
 import { auth, checkRole } from '../middleware/auth.js';
+import multer from 'multer';
 import path from 'path';
 import Application from '../models/Application.js';
 import fs from 'fs';
@@ -265,14 +266,13 @@ router.post('/:id/review', auth, async (req, res) => {
 // Uses s3Client and bucketName from index.js (passed via req.s3Client, req.bucketName)
 router.post('/:milestoneId/submit', auth, (req, res, next) => {
     // Use the multer instance attached to the request (from server/index.js)
-    // Ensure req.upload is available from the middleware in index.js
     if (!req.upload) {
         console.error("Multer instance not found on request object in milestone submit route.");
         return res.status(500).json({ message: "Server configuration error: Uploader not initialized." });
     }
     req.upload.array('files', 5)(req, res, (err) => {
         // Handle Multer errors specifically from the memory storage instance
-        if (err instanceof multer.MulterError) { 
+        if (err instanceof multer.MulterError) {
             console.error("Multer memory storage error:", err);
             return res.status(400).json({ message: `File upload error: ${err.message}`, code: err.code });
         } else if (err) {
