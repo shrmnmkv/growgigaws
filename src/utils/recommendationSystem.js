@@ -105,7 +105,42 @@ class NCFRecommender {
       }
     );
   }
-
+  async evaluateModel(interactions) {
+    if (!this.initialized) {
+      throw new Error('Model is not initialized.');
+    }
+  
+    const userIds = tf.tensor2d(interactions.map(i => [i.userId]));
+    const itemIds = tf.tensor2d(interactions.map(i => [i.itemId]));
+    const labels = tf.tensor2d(interactions.map(i => [i.rating]));
+  
+    const evalOutput = await this.model.evaluate(
+      [userIds, itemIds],
+      labels,
+      { batchSize: 32 }
+    );
+  
+    const loss = (await evalOutput[0].data())[0];
+    const accuracy = (await evalOutput[1].data())[0];
+  
+    console.log(`Evaluation — Loss: ${loss.toFixed(4)}, Accuracy: ${(accuracy * 100).toFixed(2)}%`);
+  
+    // Optional: calculate RMSE
+    const preds = this.model.predict([userIds, itemIds]);
+    const predVals = await preds.data();
+    const labelVals = await labels.data();
+  
+    let mse = 0;
+    for (let i = 0; i < predVals.length; i++) {
+      const diff = predVals[i] - labelVals[i];
+      mse += diff * diff;
+    }
+  
+    const rmse = Math.sqrt(mse / predVals.length);
+    console.log(`RMSE: ${rmse.toFixed(4)}`);
+  
+    return { loss, accuracy, rmse };
+  }
   // Get recommendations for a user
   async getRecommendations(userId, items, topK = 5) {
     if (!this.initialized) {
