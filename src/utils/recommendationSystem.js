@@ -79,8 +79,27 @@ class NCFRecommender {
         batchSize: 32,
         validationSplit: 0.2,
         callbacks: {
-          onEpochEnd: (epoch, logs) => {
-            console.log(`Epoch ${epoch + 1}: loss = ${logs.loss.toFixed(4)}`);
+          onEpochEnd: async(epoch, logs) => {
+            // Accuracy as a percentage
+          const accuracyPct = (logs.acc || logs.accuracy || 0) * 100;
+
+          // Get predictions to calculate RMSE
+          const preds = this.model.predict([userIds, itemIds]);
+          const predVals = await preds.data();
+          const labelVals = await labels.data();
+
+          let mse = 0;
+          for (let i = 0; i < predVals.length; i++) {
+            const diff = predVals[i] - labelVals[i];
+            mse += diff * diff;
+          }
+          const rmse = Math.sqrt(mse / predVals.length);
+
+          console.log(
+            `Epoch ${epoch + 1}: ` +
+            `Loss = ${logs.loss.toFixed(4)}, ` +
+            `Accuracy = ${accuracyPct.toFixed(2)}%, ` +
+            `RMSE = ${rmse.toFixed(4)}`);
           }
         }
       }

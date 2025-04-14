@@ -6,9 +6,7 @@ const getToken = () => localStorage.getItem('token');
 
 // Create an Axios instance
 const api = axios.create({
-  // Set baseURL to /api/ so all requests are prefixed correctly
-  // Example: api.post('/auth/login') will send a request to /api/auth/login
-  // Nginx will then correctly proxy this to the backend.
+  // Set baseURL to /api/ so all requests are prefixed correctly for the web deployment
   baseURL: '/api',
 });
 
