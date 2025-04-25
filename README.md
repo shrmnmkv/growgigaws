@@ -9,7 +9,7 @@ GROWGIG: A Freelance Market Place platform
 ->To run frontend:
     Configure nginx with the build directory
     nginx configuration file content:
-        server {
+    server {
         listen 80;
         listen [::]:80;
 
@@ -36,7 +36,11 @@ GROWGIG: A Freelance Market Place platform
             proxy_cache_bypass $http_upgrade;
         }
     }
-
+    
+->Change the ip address in the capacitor config file 
+  run npx capacitor run to test
+  run npx capacitor open to open andoriod build on AS
+  build an apk file and install on phone
 ->.env file requires:
     PORT
     MONGODB_URI
